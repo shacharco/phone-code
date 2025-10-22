@@ -1,22 +1,35 @@
 package com.phonecode
 
+import android.os.Bundle
+import android.util.Log
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
-import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
 
-  /**
-   * Returns the name of the main component registered from JavaScript. This is used to schedule
-   * rendering of the component.
-   */
-  override fun getMainComponentName(): String = "PhoneCode"
+    companion object {
+        private const val TAG = "MainActivity"
+    }
 
-  /**
-   * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
-   * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
-   */
-  override fun createReactActivityDelegate(): ReactActivityDelegate =
-      DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+    init {
+        Log.d(TAG, "MainActivity instance created")
+    }
+
+    /**
+     * Returns the name of the main component registered from JavaScript.
+     */
+    override fun getMainComponentName(): String {
+        Log.d(TAG, "getMainComponentName() called")
+        return "PhoneCode"
+    }
+
+    /**
+     * Returns the instance of the [ReactActivityDelegate].
+     * For RN 0.82+, we use DefaultReactActivityDelegate which handles new architecture.
+     */
+    override fun createReactActivityDelegate(): ReactActivityDelegate {
+        Log.d(TAG, "createReactActivityDelegate() called")
+        return DefaultReactActivityDelegate(this, mainComponentName)
+    }
 }

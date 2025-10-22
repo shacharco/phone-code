@@ -1,15 +1,29 @@
 package com.phonecode
 
+import android.util.Log
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.uimanager.ViewManager
 
 class SSHModulePackage : ReactPackage {
-    override fun createNativeModules(reactContext: com.facebook.react.bridge.ReactApplicationContext): List<NativeModule> {
-        return listOf(SSHModule(reactContext))
+    companion object {
+        private const val TAG = "SSHPackage"
     }
 
-    override fun createViewManagers(reactContext: com.facebook.react.bridge.ReactApplicationContext): List<ViewManager<*, *>> {
+    init {
+        Log.d(TAG, "SSHPackage initialized")
+    }
+
+    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
+        Log.d(TAG, "createNativeModules() called")
+        val modules = listOf(SSHModule(reactContext))
+        Log.d(TAG, "Created ${modules.size} native modules")
+        return modules
+    }
+
+    override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
+        Log.d(TAG, "createViewManagers() called")
         return emptyList()
     }
 }
