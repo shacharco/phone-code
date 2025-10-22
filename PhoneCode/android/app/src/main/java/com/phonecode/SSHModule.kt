@@ -67,20 +67,31 @@ class SSHModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
                         val br = BufferedReader(InputStreamReader(inputStream))
                         val buffer = CharArray(1024)
                         while (!Thread.currentThread().isInterrupted && channel?.isConnected == true) {
-                            if (br.ready()) {
-                                val count = br.read(buffer)
-                                if (count > 0) {
-                                    val output = String(buffer, 0, count)
-                                    Log.d(TAG, "Received output: ${output.take(50)}...")
-                                    sendEvent("onSSHOutput", output)
+                            try {
+                                if (br.ready()) {
+                                    val count = br.read(buffer)
+                                    if (count > 0) {
+                                        val output = String(buffer, 0, count)
+                                        Log.d(TAG, "Received output: ${output.take(50)}...")
+                                        sendEvent("onSSHOutput", output)
+                                    }
+                                } else {
+                                    // Small sleep to prevent tight loop
+                                    Thread.sleep(50)
                                 }
-                            } else {
-                                // Small sleep to prevent tight loop
-                                Thread.sleep(50)
+                            } catch (e: InterruptedException) {
+                                // Expected when disconnecting - break the loop
+                                Log.d(TAG, "Reader thread interrupted (expected during disconnect)")
+                                break
                             }
                         }
+                        Log.d(TAG, "Reader thread exiting normally")
+                    } catch (e: InterruptedException) {
+                        // Thread was interrupted during disconnect - this is normal
+                        Log.d(TAG, "Reader thread interrupted during shutdown")
                     } catch (e: Exception) {
                         Log.e(TAG, "Reader thread error", e)
+                        // Only send error event if it's not an interruption
                         if (!Thread.currentThread().isInterrupted) {
                             sendEvent("onSSHError", e.message ?: "Read error")
                         }
