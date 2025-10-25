@@ -7,16 +7,31 @@ import com.jcraft.jsch.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
+import java.io.OutputStream
 import java.util.Properties
 
 class SSHModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     private var session: Session? = null
     private var channel: ChannelShell? = null
     private var writer: PrintWriter? = null
+    private var outputStream: OutputStream? = null
     private var reader: Thread? = null
 
     companion object {
         private const val TAG = "SSHModule"
+
+        // ANSI escape codes and control characters
+        private const val CTRL_C = 3.toChar()  // ETX - End of Text
+        private const val CTRL_D = 4.toChar()  // EOT - End of Transmission
+        private const val CTRL_Z = 26.toChar() // SUB - Substitute
+        private const val TAB = 9.toChar()     // HT - Horizontal Tab
+        private const val ESC = 27.toChar()    // ESC - Escape
+        private const val ENTER = 13.toChar()  // CR - Carriage Return
+        private const val BACKSPACE = 8.toChar() // BS - Backspace (try 8 instead of 127)
+        private const val ARROW_UP = "\u001B[A"
+        private const val ARROW_DOWN = "\u001B[B"
+        private const val ARROW_RIGHT = "\u001B[C"
+        private const val ARROW_LEFT = "\u001B[D"
     }
 
     init {
@@ -49,12 +64,13 @@ class SSHModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
 
                 Log.d(TAG, "Opening shell channel")
                 channel = session?.openChannel("shell") as ChannelShell
-                // Don't set PTY type for Windows - let it use default
-                // channel?.setPtyType("xterm")
-                channel?.setPty(false)  // Disable pseudo-terminal for Windows compatibility
+
+                // Enable PTY for interactive features (tab completion, arrow keys)
+                channel?.setPtyType("xterm")
+                channel?.setPty(true)
 
                 val inputStream = channel?.inputStream
-                val outputStream = channel?.outputStream
+                outputStream = channel?.outputStream
                 writer = PrintWriter(outputStream, true)
 
                 Log.d(TAG, "Connecting channel")
@@ -76,22 +92,18 @@ class SSHModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
                                         sendEvent("onSSHOutput", output)
                                     }
                                 } else {
-                                    // Small sleep to prevent tight loop
                                     Thread.sleep(50)
                                 }
                             } catch (e: InterruptedException) {
-                                // Expected when disconnecting - break the loop
                                 Log.d(TAG, "Reader thread interrupted (expected during disconnect)")
                                 break
                             }
                         }
                         Log.d(TAG, "Reader thread exiting normally")
                     } catch (e: InterruptedException) {
-                        // Thread was interrupted during disconnect - this is normal
                         Log.d(TAG, "Reader thread interrupted during shutdown")
                     } catch (e: Exception) {
                         Log.e(TAG, "Reader thread error", e)
-                        // Only send error event if it's not an interruption
                         if (!Thread.currentThread().isInterrupted) {
                             sendEvent("onSSHError", e.message ?: "Read error")
                         }
@@ -112,14 +124,14 @@ class SSHModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
     fun executeCommand(command: String, promise: Promise) {
         Log.d(TAG, "executeCommand() called - command: $command")
         try {
-            if (writer != null && channel?.isConnected == true) {
+            if (outputStream != null && channel?.isConnected == true) {
                 Log.d(TAG, "Executing command")
-                writer?.println(command)
-                writer?.flush()
+                outputStream?.write("$command\n".toByteArray())
+                outputStream?.flush()
                 Log.d(TAG, "Command sent successfully")
                 promise.resolve(true)
             } else {
-                Log.e(TAG, "Not connected - writer: ${writer != null}, channel: ${channel?.isConnected}")
+                Log.e(TAG, "Not connected - outputStream: ${outputStream != null}, channel: ${channel?.isConnected}")
                 promise.reject("NOT_CONNECTED", "SSH not connected")
             }
         } catch (e: Exception) {
@@ -129,11 +141,70 @@ class SSHModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
     }
 
     @ReactMethod
+    fun sendRawInput(text: String, promise: Promise) {
+        Log.d(TAG, "sendRawInput() called - text: $text")
+        try {
+            if (outputStream != null && channel?.isConnected == true) {
+                Log.d(TAG, "Sending raw input")
+                outputStream?.write(text.toByteArray())
+                outputStream?.flush()
+                Log.d(TAG, "Raw input sent successfully")
+                promise.resolve(true)
+            } else {
+                Log.e(TAG, "Not connected")
+                promise.reject("NOT_CONNECTED", "SSH not connected")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Raw input send failed", e)
+            promise.reject("RAW_INPUT_ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun sendSpecialKey(key: String, promise: Promise) {
+        Log.d(TAG, "sendSpecialKey() called - key: $key")
+        try {
+            if (outputStream != null && channel?.isConnected == true) {
+                val keySequence = when (key) {
+                    "CTRL_C" -> CTRL_C.toString()
+                    "CTRL_D" -> CTRL_D.toString()
+                    "CTRL_Z" -> CTRL_Z.toString()
+                    "TAB" -> TAB.toString()
+                    "ESC" -> ESC.toString()
+                    "ENTER" -> ENTER.toString()
+                    "BACKSPACE" -> BACKSPACE.toString()
+                    "UP" -> ARROW_UP
+                    "DOWN" -> ARROW_DOWN
+                    "LEFT" -> ARROW_LEFT
+                    "RIGHT" -> ARROW_RIGHT
+                    else -> {
+                        promise.reject("INVALID_KEY", "Unknown special key: $key")
+                        return
+                    }
+                }
+
+                Log.d(TAG, "Sending special key sequence")
+                outputStream?.write(keySequence.toByteArray())
+                outputStream?.flush()
+                Log.d(TAG, "Special key sent successfully")
+                promise.resolve(true)
+            } else {
+                Log.e(TAG, "Not connected")
+                promise.reject("NOT_CONNECTED", "SSH not connected")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Special key send failed", e)
+            promise.reject("SPECIAL_KEY_ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
     fun disconnect(promise: Promise) {
         Log.d(TAG, "disconnect() called")
         try {
             reader?.interrupt()
             writer?.close()
+            outputStream?.close()
             channel?.disconnect()
             session?.disconnect()
             Log.d(TAG, "Disconnected successfully")
@@ -161,12 +232,10 @@ class SSHModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
     @ReactMethod
     fun addListener(eventName: String) {
         Log.d(TAG, "addListener() - eventName: $eventName")
-        // Required for RN EventEmitter
     }
 
     @ReactMethod
     fun removeListeners(count: Int) {
         Log.d(TAG, "removeListeners() - count: $count")
-        // Required for RN EventEmitter
     }
 }
