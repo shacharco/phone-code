@@ -9,7 +9,9 @@ import {
     Platform,
     TouchableOpacity,
     Alert,
+    Keyboard,
 } from 'react-native';
+
 import { NativeModules, NativeEventEmitter } from 'react-native';
 import Anser from 'anser';
 
@@ -27,7 +29,28 @@ export default function App() {
     const scrollRef = useRef<ScrollView>(null);
     const inputRef = useRef<TextInput>(null);
     const currentLineRef = useRef("");
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+        // Scroll to bottom when keyboard appears
+        // scrollRef.current?.scrollToEnd({ animated: true });
+      }
+
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
     const setCurrentLine = (value: string) => {
         currentLineRef.current = value;
         setCurrentLineState(value);
@@ -212,246 +235,286 @@ export default function App() {
         );
     }
 
-    return (
-        <KeyboardAvoidingView
-            style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-            <View style={styles.header}>
-                <Text style={styles.headerText}>{username}@{host}</Text>
-                <TouchableOpacity onPress={disconnect}>
-                    <Text style={styles.disconnectText}>Disconnect</Text>
-                </TouchableOpacity>
-            </View>
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <View style={styles.header}>
+        <Text style={styles.headerText}>{username}@{host}</Text>
+        <TouchableOpacity onPress={disconnect}>
+          <Text style={styles.disconnectText}>Disconnect</Text>
+        </TouchableOpacity>
+      </View>
 
+      <TouchableOpacity
+        style={styles.terminalWrapper}
+        activeOpacity={1}
+        onPress={focusInput}
+      >
+        <ScrollView
+          style={styles.terminal}
+          ref={scrollRef}
+          contentContainerStyle={styles.terminalContent}
+        >
+          <Text style={styles.terminalText} selectable={true}>
+            {output}
+          </Text>
+          <View style={styles.inputLine}>
+            <Text style={styles.promptText}>$ </Text>
+            <View style={{ flex: 1, flexDirection: 'row' }}>
+              <TextInput
+                ref={inputRef}
+                style={styles.terminalInput}
+                value={currentLine}
+                onChangeText={(text) => {
+                  setCurrentLine(text);
+                  if (ctrlPressed && text.length > currentLine.length) {
+                    const newChar = text[text.length - 1];
+                    handleCtrlKey(newChar);
+                    setCurrentLine(currentLine);
+                  }
+                }}
+                autoCorrect={false}
+                autoCapitalize="none"
+                autoFocus
+                blurOnSubmit={false}
+                returnKeyType="send"
+                onSubmitEditing={sendCommand}
+                placeholderTextColor="#0a0"
+                multiline={false}
+              />
+            </View>
+          </View>
+        </ScrollView>
+      </TouchableOpacity>
+
+      {/* Custom Keyboard Toolbar - Only show when system keyboard is visible */}
+      {isKeyboardVisible && (
+        <View style={styles.keyboardToolbar}>
+          {/* First Row - Special Keys */}
+          <View style={styles.keyboardRow}>
             <TouchableOpacity
-                style={styles.terminalWrapper}
-                activeOpacity={1}
-                onPress={focusInput}
+              style={styles.keyButton}
+              onPress={() => sendSpecialKey('ESC')}
             >
-                <ScrollView
-                    style={styles.terminal}
-                    ref={scrollRef}
-                    contentContainerStyle={styles.terminalContent}
-                >
-                    <Text style={styles.terminalText} selectable={true}>
-                        {output}
-                    </Text>
-                    <View style={styles.inputLine}>
-                        <Text style={styles.promptText}>$ </Text>
-                      <View style={{ flex: 1, flexDirection: 'row' }}>
-                        <TextInput
-                              ref={inputRef}
-                              style={styles.terminalInput}
-                              value={currentLine}
-                              onChangeText={(text) => {
-                                  setCurrentLine(text);
-                                  if (ctrlPressed && text.length > currentLine.length) {
-                                      const newChar = text[text.length - 1];
-                                      handleCtrlKey(newChar);
-                                      setCurrentLine(currentLine);
-                                  }
-                              }}
-                              autoCorrect={false}
-                              autoCapitalize="none"
-                              autoFocus
-                              blurOnSubmit={false}
-                              returnKeyType="send"
-                              onSubmitEditing={sendCommand}
-                              placeholderTextColor="#0a0"
-                              multiline={false}
-                          />
-                      </View>
-                    </View>
-                </ScrollView>
+              <Text style={styles.keyButtonText}>ESC</Text>
             </TouchableOpacity>
 
-            {/* Special Keys Toolbar */}
-            <View style={styles.keyboardToolbar}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => sendSpecialKey('ESC')}
-                    >
-                        <Text style={styles.keyButtonText}>ESC</Text>
-                    </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.keyButton, ctrlPressed && styles.keyButtonActive]}
+              onPress={() => setCtrlPressed(!ctrlPressed)}
+            >
+              <Text style={[styles.keyButtonText, ctrlPressed && styles.keyButtonActiveText]}>
+                CTRL
+              </Text>
+            </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={[styles.keyButton, ctrlPressed && styles.keyButtonActive]}
-                        onPress={() => setCtrlPressed(!ctrlPressed)}
-                    >
-                        <Text style={[styles.keyButtonText, ctrlPressed && styles.keyButtonActiveText]}>
-                            CTRL
-                        </Text>
-                    </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.keyButton}
+              onPress={() => sendSpecialKey('TAB')}
+            >
+              <Text style={styles.keyButtonText}>TAB</Text>
+            </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => sendSpecialKey('TAB')}
-                    >
-                        <Text style={styles.keyButtonText}>TAB</Text>
-                    </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.keyButton}
+              onPress={() => sendSpecialKey('UP')}
+            >
+              <Text style={styles.keyButtonText}>↑</Text>
+            </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => sendSpecialKey('UP')}
-                    >
-                        <Text style={styles.keyButtonText}>↑</Text>
-                    </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.keyButton}
+              onPress={() => sendSpecialKey('DOWN')}
+            >
+              <Text style={styles.keyButtonText}>↓</Text>
+            </TouchableOpacity>
+          </View>
 
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => sendSpecialKey('DOWN')}
-                    >
-                        <Text style={styles.keyButtonText}>↓</Text>
-                    </TouchableOpacity>
+          {/* Second Row - Common Characters */}
+          <View style={styles.keyboardRow}>
+            <TouchableOpacity
+              style={styles.keyButton}
+              onPress={() => setCurrentLine(currentLine + '/')}
+            >
+              <Text style={styles.keyButtonText}>/</Text>
+            </TouchableOpacity>
 
-                    <View style={styles.keySeparator} />
+            <TouchableOpacity
+              style={styles.keyButton}
+              onPress={() => setCurrentLine(currentLine + '-')}
+            >
+              <Text style={styles.keyButtonText}>-</Text>
+            </TouchableOpacity>
 
-                </ScrollView>
-            </View>
-        </KeyboardAvoidingView>
-    );
+            <TouchableOpacity
+              style={styles.keyButton}
+              onPress={() => setCurrentLine(currentLine + '_')}
+            >
+              <Text style={styles.keyButtonText}>_</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.keyButton}
+              onPress={() => setCurrentLine(currentLine + '~')}
+            >
+              <Text style={styles.keyButtonText}>~</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.keyButton}
+              onPress={() => setCurrentLine(currentLine + '\\')}
+            >
+              <Text style={styles.keyButtonText}>\</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </KeyboardAvoidingView>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#000',
-        writingDirection: 'ltr'
-    },
-    connectContainer: {
-        flex: 1,
-        padding: 20,
-        justifyContent: 'center',
-        backgroundColor: '#1e1e1e',
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        marginBottom: 40,
-        color: '#fff',
-        textAlign: 'center',
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 12,
-        backgroundColor: '#2d2d2d',
-        borderBottomWidth: 1,
-        borderBottomColor: '#444',
-    },
-    headerText: {
-        color: '#0f0',
-        fontSize: 14,
-        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    },
-    disconnectText: {
-        color: '#f44',
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    input: {
-        borderWidth: 1,
-        borderColor: '#444',
-        borderRadius: 6,
-        marginBottom: 15,
-        padding: 15,
-        color: '#fff',
-        backgroundColor: '#2d2d2d',
-        fontSize: 16,
-    },
-    connectButton: {
-        backgroundColor: '#0a7ea4',
-        padding: 15,
-        borderRadius: 8,
-        marginTop: 10,
-    },
-    connectButtonText: {
-        color: '#fff',
-        textAlign: 'center',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    terminalWrapper: {
-        flex: 1,
-    },
-    terminal: {
-        flex: 1,
-        flexDirection: 'column',
-        writingDirection: 'ltr',
-        backgroundColor: '#000',
-    },
-    terminalContent: {
-        padding: 10,
-        flexGrow: 1,
-    },
-    terminalText: {
-        color: '#0f0',
-        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-        fontSize: 14,
-        lineHeight: 20,
-    },
-inputLine: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 4,
-        writingDirection: 'ltr',
-        direction: 'ltr',        // force layout LTR
-
-},
-    promptText: {
-        color: '#0f0',
-        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-        fontSize: 14,
-        lineHeight: 20,
-        writingDirection: 'ltr',
-        direction: 'ltr',        // force layout LTR
-    },
-    terminalInput: {
-        flex: 1,
-        color: '#0f0',
-        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-        fontSize: 14,
-        padding: 0,
-        margin: 0,
-        lineHeight: 20,
-        minHeight: 20,
-        writingDirection: 'ltr',
-    },
-    keyboardToolbar: {
-        backgroundColor: '#1a1a1a',
-        borderTopWidth: 1,
-        borderTopColor: '#333',
-        paddingVertical: 8,
-        paddingHorizontal: 4,
-    },
-    keyButton: {
-        backgroundColor: '#2d2d2d',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        marginHorizontal: 4,
-        borderRadius: 6,
-        borderWidth: 1,
-        borderColor: '#444',
-        minWidth: 50,
-        alignItems: 'center',
-    },
-    keyButtonActive: {
-        backgroundColor: '#0a7ea4',
-        borderColor: '#0a7ea4',
-    },
-    keyButtonText: {
-        color: '#fff',
-        fontSize: 14,
-        fontWeight: '600',
-        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    },
-    keyButtonActiveText: {
-        color: '#fff',
-    },
-    keySeparator: {
-        width: 12,
-    },
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+    writingDirection: 'ltr'
+  },
+  connectContainer: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
+    backgroundColor: '#1e1e1e',
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 40,
+    color: '#fff',
+    textAlign: 'center',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#2d2d2d',
+    borderBottomWidth: 1,
+    borderBottomColor: '#444',
+  },
+  headerText: {
+    color: '#0f0',
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  disconnectText: {
+    color: '#f44',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 6,
+    marginBottom: 15,
+    padding: 15,
+    color: '#fff',
+    backgroundColor: '#2d2d2d',
+    fontSize: 16,
+  },
+  connectButton: {
+    backgroundColor: '#0a7ea4',
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  connectButtonText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  terminalWrapper: {
+    flex: 1,
+  },
+  terminal: {
+    flex: 1,
+    flexDirection: 'column',
+    writingDirection: 'ltr',
+    backgroundColor: '#000',
+  },
+  terminalContent: {
+    padding: 10,
+    flexGrow: 1,
+  },
+  terminalText: {
+    color: '#0f0',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  inputLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    writingDirection: 'ltr',
+    direction: 'ltr',
+  },
+  promptText: {
+    color: '#0f0',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 14,
+    lineHeight: 20,
+    writingDirection: 'ltr',
+    direction: 'ltr',
+  },
+  terminalInput: {
+    flex: 1,
+    color: '#0f0',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 14,
+    padding: 0,
+    margin: 0,
+    lineHeight: 20,
+    minHeight: 20,
+    writingDirection: 'ltr',
+  },
+  keyboardToolbar: {
+    backgroundColor: '#1a1a1a',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  keyboardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    marginBottom: 6,
+  },
+  keyButton: {
+    backgroundColor: '#2d2d2d',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#444',
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  keyButtonActive: {
+    backgroundColor: '#0a7ea4',
+    borderColor: '#0a7ea4',
+  },
+  keyButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  keyButtonActiveText: {
+    color: '#fff',
+  },
 });
