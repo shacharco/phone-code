@@ -9,10 +9,15 @@ import {
     Platform,
     TouchableOpacity,
     Alert,
+    I18nManager,
 } from 'react-native';
 import { NativeModules, NativeEventEmitter } from 'react-native';
+import Anser from 'anser';
 
 const { SSHModule } = NativeModules;
+
+I18nManager.allowRTL(false);
+I18nManager.forceRTL(false);
 
 export default function App() {
     const [connected, setConnected] = useState(false);
@@ -22,7 +27,7 @@ export default function App() {
     const [output, setOutput] = useState('');
     const [currentLine, setCurrentLineState] = useState('');
     const [ctrlPressed, setCtrlPressed] = useState(false);
-    const [pendingSpecialKey, setPendingSpecialKey] = useState(false);
+    const [pendingSpecialKey, setPendingSpecialKey] = useState('');
     const scrollRef = useRef<ScrollView>(null);
     const inputRef = useRef<TextInput>(null);
     const currentLineRef = useRef("");
@@ -40,78 +45,47 @@ export default function App() {
 
         const eventEmitter = new NativeEventEmitter(SSHModule);
 
-        const stripAnsi = (str: string): string => {
-            // More comprehensive ANSI escape sequence removal
-            return str.replace(
-                /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><@X]/g,
-                ''
-            );
-        };
-
         const outputListener = eventEmitter.addListener('onSSHOutput', (data: string) => {
-            console.log('Raw SSH output:', JSON.stringify(data));
-            const cleanData = stripAnsi(data);
-            console.log('Clean SSH output:', JSON.stringify(cleanData));
+          console.log('Raw SSH output:', JSON.stringify(data));
 
-            if (pendingSpecialKey) {
-                setPendingSpecialKey(false);
+          // Feed the raw SSH data directly into the terminal emulator
+          let parsed = Anser.ansiToText(data);
+          console.log('Parsed SSH output:', JSON.stringify(parsed));
 
-                // Remove control characters and split by lines
-                let completion = cleanData
-                    .replace(/\r/g, '')
-                    .replace(/\x07/g, '')  // Bell
-                    .replace(/\x08/g, '')  // Backspace
-                    .replace(/\x00/g, ''); // Null
-
-                console.log('Completion data:', JSON.stringify(completion));
-
-                const lines = completion.split('\n').filter(l => l.trim() !== '');
-                console.log('Completion lines:', lines);
-
-                if (lines.length > 0) {
-                    let lastLine = lines[lines.length - 1];
-                    console.log('Last line before cleanup:', JSON.stringify(lastLine));
-
-                    // Remove various prompt formats
-                    lastLine = lastLine.replace(/^.*?[\$#>]\s*/, '');           // Unix prompts
-                    lastLine = lastLine.replace(/^[A-Z]:\\.*?>\s*/i, '');       // Windows prompts (C:\...>)
-                    lastLine = lastLine.replace(/^.*?@.*?:\s*/, '');            // user@host: prompts
-
-                    // Remove any remaining non-printable characters
-                    lastLine = lastLine.replace(/[\x00-\x1F\x7F]/g, '');
-                    const prefixLength = currentLine.length;
-                    if (lastLine.startsWith(currentLine)) {
-                        lastLine = lastLine.slice(prefixLength);
-                    }
-
-                    console.log('Last line after cleanup:', JSON.stringify(lastLine));
-                    setCurrentLine(lastLine.trim());
-
-                    // For arrow keys, immediately delete the echo
-                    if (lastLine.trim().length > 0) {
-                        SSHModule.deleteArrowEcho(lastLine.trim().length)
-                            .then(() => console.log('Deleted arrow echo'))
-                            .catch((err: any) => console.error('Failed to delete arrow echo:', err));
-                    }
-                }
-            } else {
-                // Normal terminal output
-                setOutput(prev => prev + cleanData);
-                setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+          // Extract current visible buffer (what the terminal would show)
+          console.log('pendingSpecialKey:', pendingSpecialKey);
+          if (pendingSpecialKey) {
+            if (pendingSpecialKey === "TAB"){
+              parsed = parsed.slice(currentLine.length);
             }
+              setCurrentLine(parsed);
+            if (data.length > 0) {
+                SSHModule.deleteArrowEcho(data.length)
+                    .then(() => console.log('Deleted arrow echo'))
+                    .catch((err: any) => console.error('Failed to delete arrow echo:', err));
+            }
+            setPendingSpecialKey('')
+          } else {
+            console.log("Received Normal SSH output:", JSON.stringify(output), JSON.stringify(parsed));
+            setOutput(prev => prev + parsed);
+
+          }
+
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
         });
+
 
         const errorListener = eventEmitter.addListener('onSSHError', (error: string) => {
-            console.log('JS: Received SSH error:', error);
-            Alert.alert('SSH Error', error);
-            setConnected(false);
-        });
+              console.log('JS: Received SSH error:', error);
+              Alert.alert('SSH Error', error);
+              setConnected(false);
+          });
 
         return () => {
             outputListener.remove();
             errorListener.remove();
         };
-    }, [pendingSpecialKey]);
+    }, [pendingSpecialKey, currentLine, output]);
 
     const connect = async () => {
         try {
@@ -150,7 +124,7 @@ export default function App() {
 
         try {
             console.log('Sending command:', currentLine);
-            setPendingSpecialKey(false);
+            setPendingSpecialKey('');
             await SSHModule.executeCommand(currentLine);
             setCurrentLine('');
             inputRef.current?.focus();
@@ -170,11 +144,13 @@ export default function App() {
             const inputUpdatingKeys = ['TAB', 'UP', 'DOWN'];
 
             if (inputUpdatingKeys.includes(key)) {
-                setPendingSpecialKey(true);
+              console.log('setPendingSpecialKey true: ', key);
+                setPendingSpecialKey(key);
                 await SSHModule.sendSpecialKey(currentLine, key);
             } else {
-                // LEFT, RIGHT, Ctrl, ESC, Enter keys
-                setPendingSpecialKey(false);
+              console.log('setPendingSpecialKey false: ', key);
+              // LEFT, RIGHT, Ctrl, ESC, Enter keys
+                setPendingSpecialKey('');
 
                 // Clear input for Ctrl keys
                 const clearAfterSend = ['CTRL_C', 'CTRL_D', 'CTRL_Z'];
@@ -189,7 +165,7 @@ export default function App() {
         } catch (err: any) {
             console.error('Special key error:', err);
             Alert.alert('Error', err.message || 'Failed to send special key');
-            setPendingSpecialKey(false);
+            setPendingSpecialKey('');
         }
     };
 
@@ -267,27 +243,29 @@ export default function App() {
                     </Text>
                     <View style={styles.inputLine}>
                         <Text style={styles.promptText}>$ </Text>
+                      <View style={{ flex: 1, flexDirection: 'row' }}>
                         <TextInput
-                            ref={inputRef}
-                            style={styles.terminalInput}
-                            value={currentLine}
-                            onChangeText={(text) => {
-                                setCurrentLine(text);
-                                if (ctrlPressed && text.length > currentLine.length) {
-                                    const newChar = text[text.length - 1];
-                                    handleCtrlKey(newChar);
-                                    setCurrentLine(currentLine);
-                                }
-                            }}
-                            autoCorrect={false}
-                            autoCapitalize="none"
-                            autoFocus
-                            blurOnSubmit={false}
-                            returnKeyType="send"
-                            onSubmitEditing={sendCommand}
-                            placeholderTextColor="#0a0"
-                            multiline={false}
-                        />
+                              ref={inputRef}
+                              style={styles.terminalInput}
+                              value={currentLine}
+                              onChangeText={(text) => {
+                                  setCurrentLine(text);
+                                  if (ctrlPressed && text.length > currentLine.length) {
+                                      const newChar = text[text.length - 1];
+                                      handleCtrlKey(newChar);
+                                      setCurrentLine(currentLine);
+                                  }
+                              }}
+                              autoCorrect={false}
+                              autoCapitalize="none"
+                              autoFocus
+                              blurOnSubmit={false}
+                              returnKeyType="send"
+                              onSubmitEditing={sendCommand}
+                              placeholderTextColor="#0a0"
+                              multiline={false}
+                          />
+                      </View>
                     </View>
                 </ScrollView>
             </TouchableOpacity>
@@ -332,53 +310,8 @@ export default function App() {
                         <Text style={styles.keyButtonText}>↓</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => sendSpecialKey('LEFT')}
-                    >
-                        <Text style={styles.keyButtonText}>←</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => sendSpecialKey('RIGHT')}
-                    >
-                        <Text style={styles.keyButtonText}>→</Text>
-                    </TouchableOpacity>
-
                     <View style={styles.keySeparator} />
 
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => {
-                            const cursorPos = currentLine.length;
-                            setCurrentLine(currentLine + '|');
-                            setTimeout(() => setCurrentLine(currentLine.slice(0, cursorPos) + currentLine.slice(cursorPos)), 50);
-                        }}
-                    >
-                        <Text style={styles.keyButtonText}>|</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => setCurrentLine(currentLine + '/')}
-                    >
-                        <Text style={styles.keyButtonText}>/</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => setCurrentLine(currentLine + '-')}
-                    >
-                        <Text style={styles.keyButtonText}>-</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.keyButton}
-                        onPress={() => setCurrentLine(currentLine + '~')}
-                    >
-                        <Text style={styles.keyButtonText}>~</Text>
-                    </TouchableOpacity>
                 </ScrollView>
             </View>
         </KeyboardAvoidingView>
@@ -465,12 +398,14 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         marginTop: 4,
+        writingDirection: 'ltr',
     },
     promptText: {
         color: '#0f0',
         fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
         fontSize: 14,
         lineHeight: 20,
+        writingDirection: 'ltr',
     },
     terminalInput: {
         flex: 1,
@@ -481,6 +416,7 @@ const styles = StyleSheet.create({
         margin: 0,
         lineHeight: 20,
         minHeight: 20,
+        writingDirection: 'ltr',
     },
     keyboardToolbar: {
         backgroundColor: '#1a1a1a',

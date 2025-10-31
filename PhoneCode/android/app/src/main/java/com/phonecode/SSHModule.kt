@@ -80,58 +80,57 @@ class SSHModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
                 channel?.connect()
                 Log.d(TAG, "Channel connected successfully")
 
-                reader = Thread {
-                    try {
-                        Log.d(TAG, "Reader thread started")
-                        val br = BufferedReader(InputStreamReader(inputStream))
-                        val buffer = CharArray(4096)
+reader = Thread {
+    try {
+        Log.d(TAG, "Reader thread started")
+        val br = BufferedReader(InputStreamReader(inputStream))
+        val buffer = CharArray(4096)
 
-                        while (!Thread.currentThread().isInterrupted && channel?.isConnected == true) {
-                            try {
-                                if (br.ready()) {
-                                    val count = br.read(buffer)
-                                    if (count > 0) {
-                                        val output = String(buffer, 0, count)
-                                        Log.d(TAG, "Received output: ${output.take(100)}...")
-                                        sendEvent("onSSHOutput", output)
+        val sb = StringBuilder()
+        var lastReadTime = System.currentTimeMillis()
+        val debounceMs = 120L  // time of silence before flushing accumulated output
 
-                                        if (pendingClear) {
-                                            pendingClear = false
-
-                                            // Send backspaces immediately after receiving output
-                                            if (lastSentInputLength > 0) {
-                                                Log.d(TAG, "Sending $lastSentInputLength backspace sequences for $clearType")
-                                                repeat(lastSentInputLength) {
-                                                    outputStream?.write(KEY_BACKSPACE.toByteArray()) // Move back
-                                                    outputStream?.write(" ".toByteArray())            // Write space
-                                                    outputStream?.write(KEY_BACKSPACE.toByteArray()) // Move back again
-                                                }
-                                                outputStream?.flush()
-                                            }
-
-                                            lastSentInputLength = 0
-                                            clearType = ""
-                                        }
-                                    }
-                                } else {
-                                    Thread.sleep(50)
-                                }
-                            } catch (e: InterruptedException) {
-                                Log.d(TAG, "Reader thread interrupted (expected during disconnect)")
-                                break
-                            }
-                        }
-                        Log.d(TAG, "Reader thread exiting normally")
-                    } catch (e: InterruptedException) {
-                        Log.d(TAG, "Reader thread interrupted during shutdown")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Reader thread error", e)
-                        if (!Thread.currentThread().isInterrupted) {
-                            sendEvent("onSSHError", e.message ?: "Read error")
-                        }
+        while (!Thread.currentThread().isInterrupted && channel?.isConnected == true) {
+            try {
+                if (br.ready()) {
+                    val count = br.read(buffer)
+                    if (count > 0) {
+                        val output = String(buffer, 0, count)
+                        sb.append(output)
+                        lastReadTime = System.currentTimeMillis()
                     }
+                } else {
+                    // If no new data for debounceMs, flush accumulated output
+                    if (sb.isNotEmpty() && System.currentTimeMillis() - lastReadTime > debounceMs) {
+                        val bulkOutput = sb.toString()
+                        sb.setLength(0)
+                        Log.d(TAG, "Flushed consolidated output: ${bulkOutput.take(100)}...")
+                        sendEvent("onSSHOutput", bulkOutput)
+                    }
+                    Thread.sleep(50)
                 }
-                reader?.start()
+            } catch (e: InterruptedException) {
+                Log.d(TAG, "Reader thread interrupted (expected during disconnect)")
+                break
+            }
+        }
+
+        // Flush any remaining data before exiting
+        if (sb.isNotEmpty()) {
+            sendEvent("onSSHOutput", sb.toString())
+        }
+
+        Log.d(TAG, "Reader thread exiting normally")
+    } catch (e: InterruptedException) {
+        Log.d(TAG, "Reader thread interrupted during shutdown")
+    } catch (e: Exception) {
+        Log.e(TAG, "Reader thread error", e)
+        if (!Thread.currentThread().isInterrupted) {
+            sendEvent("onSSHError", e.message ?: "Read error")
+        }
+    }
+}
+reader?.start()
 
                 Log.d(TAG, "Connection completed successfully")
                 promise.resolve("Connected successfully")
