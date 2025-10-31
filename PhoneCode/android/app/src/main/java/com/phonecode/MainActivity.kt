@@ -5,6 +5,8 @@ import android.util.Log
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import android.content.res.Configuration
+import android.content.res.Resources
 
 class MainActivity : ReactActivity() {
 
@@ -16,18 +18,24 @@ class MainActivity : ReactActivity() {
         Log.d(TAG, "MainActivity instance created")
     }
 
-    /**
-     * Returns the name of the main component registered from JavaScript.
-     */
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // ✅ Force layout direction to LTR
+        val config = Configuration(resources.configuration)
+        config.setLayoutDirection(java.util.Locale.ENGLISH)
+        resources.updateConfiguration(config, resources.displayMetrics)
+
+        window.decorView.layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR
+
+        Log.d(TAG, "Layout direction forced to LTR")
+    }
+
     override fun getMainComponentName(): String {
         Log.d(TAG, "getMainComponentName() called")
         return "PhoneCode"
     }
 
-    /**
-     * Returns the instance of the [ReactActivityDelegate].
-     * For RN 0.82+, we use DefaultReactActivityDelegate which handles new architecture.
-     */
     override fun createReactActivityDelegate(): ReactActivityDelegate {
         Log.d(TAG, "createReactActivityDelegate() called")
         return DefaultReactActivityDelegate(this, mainComponentName)

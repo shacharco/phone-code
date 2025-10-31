@@ -11,6 +11,8 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.soloader.SoLoader
+import android.content.res.Configuration
+import android.content.res.Resources
 
 class MainApplication : Application(), ReactApplication {
 
@@ -54,6 +56,11 @@ class MainApplication : Application(), ReactApplication {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "onCreate() called")
+        val config = Configuration(resources.configuration)
+        config.setLayoutDirection(java.util.Locale.ENGLISH)
+        resources.updateConfiguration(config, resources.displayMetrics)
+        Log.d("MainApplication", "Forced LTR at application level")
+
         try {
             Log.d(TAG, "Initializing SoLoader")
             SoLoader.init(this, false)
