@@ -9,15 +9,11 @@ import {
     Platform,
     TouchableOpacity,
     Alert,
-    I18nManager,
 } from 'react-native';
 import { NativeModules, NativeEventEmitter } from 'react-native';
 import Anser from 'anser';
 
 const { SSHModule } = NativeModules;
-
-I18nManager.allowRTL(false);
-I18nManager.forceRTL(false);
 
 export default function App() {
     const [connected, setConnected] = useState(false);
@@ -321,7 +317,8 @@ export default function App() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000'
+        backgroundColor: '#000',
+        writingDirection: 'ltr'
     },
     connectContainer: {
         flex: 1,
@@ -382,6 +379,8 @@ const styles = StyleSheet.create({
     },
     terminal: {
         flex: 1,
+        flexDirection: 'column',
+        writingDirection: 'ltr',
         backgroundColor: '#000',
     },
     terminalContent: {
@@ -394,18 +393,21 @@ const styles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 20,
     },
-    inputLine: {
+inputLine: {
         flexDirection: 'row',
         alignItems: 'center',
         marginTop: 4,
         writingDirection: 'ltr',
-    },
+        direction: 'ltr',        // force layout LTR
+
+},
     promptText: {
         color: '#0f0',
         fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
         fontSize: 14,
         lineHeight: 20,
         writingDirection: 'ltr',
+        direction: 'ltr',        // force layout LTR
     },
     terminalInput: {
         flex: 1,
